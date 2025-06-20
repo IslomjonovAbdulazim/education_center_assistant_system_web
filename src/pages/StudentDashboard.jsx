@@ -8,6 +8,7 @@ import RateSession from '../components/student/RateSession';
 const StudentDashboard = () => {
   const [activeSection, setActiveSection] = useState('book-session');
   const [refresh, setRefresh] = useState(0);
+  const [selectedSessionId, setSelectedSessionId] = useState(null);
 
   const handleSessionBooked = () => {
     setRefresh(refresh + 1);
@@ -16,6 +17,12 @@ const StudentDashboard = () => {
 
   const handleSessionRated = () => {
     setRefresh(refresh + 1);
+    setActiveSection('my-sessions');
+  };
+
+  const handleRateSession = (sessionId) => {
+    setSelectedSessionId(sessionId);
+    setActiveSection('rate');
   };
 
   const renderContent = () => {
@@ -23,9 +30,9 @@ const StudentDashboard = () => {
       case 'book-session':
         return <BookSession onSessionBooked={handleSessionBooked} />;
       case 'my-sessions':
-        return <MySessions refresh={refresh} />;
+        return <MySessions refresh={refresh} onRateSession={handleRateSession} />;
       case 'rate':
-        return <RateSession onSessionRated={handleSessionRated} />;
+        return <RateSession onSessionRated={handleSessionRated} selectedSessionId={selectedSessionId} />;
       default:
         return <BookSession onSessionBooked={handleSessionBooked} />;
     }

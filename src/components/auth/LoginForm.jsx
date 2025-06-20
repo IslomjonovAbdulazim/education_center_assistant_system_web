@@ -92,13 +92,6 @@ const LoginForm = () => {
       >
         {loading ? 'Kirish...' : 'Kirish'}
       </Button>
-
-      <div style={{ marginTop: '20px', fontSize: '12px', color: '#666', textAlign: 'center' }}>
-        <p>Test hisobi:</p>
-        <p>Tel: +998990330919</p>
-        <p>Parol: aisha</p>
-        <p>Admin uchun ID kerak emas</p>
-      </div>
     </form>
   );
 };

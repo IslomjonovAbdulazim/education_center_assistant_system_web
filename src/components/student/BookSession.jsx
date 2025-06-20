@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { studentAPI } from '../../services/api';
 import Card from '../common/Card';
+import Input from '../common/Input';
 import Button from '../common/Button';
 
 const BookSession = ({ onSessionBooked }) => {
+  const [selectedDate, setSelectedDate] = useState('');
   const [assistants, setAssistants] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [bookingLoading, setBookingLoading] = useState(false);
 
   const fetchAssistants = async () => {
     try {
@@ -26,118 +27,124 @@ const BookSession = ({ onSessionBooked }) => {
     fetchAssistants();
   }, []);
 
-  const bookSession = async (assistantId, slotDateTime) => {
-    setBookingLoading(true);
-    setError('');
-    setSuccess('');
-
+  const bookSession = async (assistantId, slot) => {
     try {
-      const response = await studentAPI.bookSession({
+      const [date, time] = slot.split(' ');
+      const datetime = new Date(`${date}T${time}:00`);
+      
+      await studentAPI.bookSession({
         assistant_id: assistantId,
-        datetime: slotDateTime
+        datetime: datetime.toISOString()
       });
-      setSuccess(response.data.message);
+      
+      setSuccess('Dars muvaffaqiyatli band qilindi');
       fetchAssistants(); // Refresh to update available slots
+      
       if (onSessionBooked) {
         onSessionBooked();
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Darsni band qilishda xatolik');
-    } finally {
-      setBookingLoading(false);
     }
   };
 
-  const parseSlot = (slotString) => {
-    // Format: "2024-01-15 10:30"
-    const [date, time] = slotString.split(' ');
-    return { date, time };
+  const getAvailableSlotsForDate = (assistant) => {
+    if (!selectedDate) return assistant.available_slots || [];
+    
+    return (assistant.available_slots || []).filter(slot => 
+      slot.startsWith(selectedDate)
+    );
   };
-
-  if (loading) return <div className="loading">Yuklanmoqda...</div>;
 
   return (
     <Card title="Dars band qilish">
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
       
-      {assistants.length === 0 ? (
-        <p style={{ textAlign: 'center', color: '#666', padding: '20px' }}>
-          Sizning yo'nalishingiz bo'yicha yordamchilar topilmadi
-        </p>
+      <Input
+        label="Sana tanlang (ixtiyoriy)"
+        type="date"
+        value={selectedDate}
+        onChange={(e) => setSelectedDate(e.target.value)}
+        min={new Date().toISOString().split('T')[0]}
+      />
+
+      {loading ? (
+        <div className="loading">Yuklanmoqda...</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {assistants.map((assistant) => (
-            <div key={assistant.id} style={{
-              border: '1px solid #eee',
-              borderRadius: '8px',
-              padding: '20px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
-                {assistant.photo_url && (
-                  <img 
-                    src={assistant.photo_url} 
-                    alt="Assistant" 
-                    style={{ 
-                      width: '60px', 
-                      height: '60px', 
-                      borderRadius: '50%',
-                      objectFit: 'cover'
-                    }} 
-                  />
-                )}
-                <div>
-                  <h3 style={{ margin: '0 0 4px 0' }}>{assistant.fullname}</h3>
-                  <p style={{ margin: '0 0 4px 0', color: '#666' }}>Fan: {assistant.subject}</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span>⭐ {assistant.avg_rating}</span>
-                    <span style={{ fontSize: '12px', color: '#666' }}>reyting</span>
-                  </div>
-                </div>
-              </div>
+        <div style={{ marginTop: '20px' }}>
+          {assistants.length === 0 ? (
+            <p style={{ textAlign: 'center', color: '#666', padding: '20px' }}>
+              Sizning yo'nalishingizda yordamchilar yo'q
+            </p>
+          ) : (
+            assistants.map((assistant) => {
+              const availableSlots = getAvailableSlotsForDate(assistant);
               
-              <div>
-                <h4 style={{ marginBottom: '12px', fontSize: '14px' }}>Mavjud vaqtlar:</h4>
-                {assistant.available_slots.length === 0 ? (
-                  <p style={{ color: '#666', fontSize: '14px' }}>Mavjud vaqtlar yo'q</p>
-                ) : (
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                    gap: '8px'
-                  }}>
-                    {assistant.available_slots.slice(0, 6).map((slot, index) => {
-                      const { date, time } = parseSlot(slot);
-                      return (
-                        <Button
-                          key={index}
-                          size="small"
-                          variant="secondary"
-                          disabled={bookingLoading}
-                          onClick={() => bookSession(assistant.id, slot)}
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '2px',
-                            padding: '8px',
-                            fontSize: '12px'
-                          }}
-                        >
-                          <span>{date}</span>
-                          <span>{time}</span>
-                        </Button>
-                      );
-                    })}
+              return (
+                <div key={assistant.id} style={{
+                  border: '1px solid #eee',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                    {assistant.photo_url && (
+                      <img 
+                        src={assistant.photo_url} 
+                        alt="Assistant" 
+                        style={{ 
+                          width: '48px', 
+                          height: '48px', 
+                          borderRadius: '50%',
+                          objectFit: 'cover'
+                        }} 
+                      />
+                    )}
+                    <div>
+                      <h4 style={{ margin: 0 }}>{assistant.fullname}</h4>
+                      <div style={{ fontSize: '14px', color: '#666' }}>
+                        {assistant.subject} • ⭐ {assistant.avg_rating}
+                      </div>
+                    </div>
                   </div>
-                )}
-                {assistant.available_slots.length > 6 && (
-                  <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
-                    +{assistant.available_slots.length - 6} ko'proq vaqt mavjud
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
+                  
+                  {availableSlots.length === 0 ? (
+                    <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>
+                      {selectedDate ? 'Bu sanada mavjud vaqt yo\'q' : 'Mavjud vaqt yo\'q'}
+                    </p>
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: '14px', color: '#666', marginBottom: '8px' }}>
+                        Mavjud vaqtlar:
+                      </div>
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', 
+                        gap: '8px' 
+                      }}>
+                        {availableSlots.map((slot, index) => (
+                          <Button
+                            key={index}
+                            variant="secondary"
+                            size="small"
+                            onClick={() => bookSession(assistant.id, slot)}
+                            style={{
+                              padding: '8px 12px',
+                              fontSize: '12px',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            {slot}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       )}
     </Card>

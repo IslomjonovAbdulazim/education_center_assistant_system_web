@@ -1,42 +1,62 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { assistantAPI } from '../../services/api';
 import Card from '../common/Card';
-import Input from '../common/Input';
 import Button from '../common/Button';
 
 const MarkAttendance = ({ refresh }) => {
-  const [formData, setFormData] = useState({
-    date: '',
-    time: ''
-  });
-  const [students, setStudents] = useState([]);
+  const [uncheckedSessions, setUncheckedSessions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
-    setError('');
-    setSuccess('');
-  };
-
-  const fetchStudents = async () => {
-    if (!formData.date || !formData.time) {
-      setError('Sana va vaqtni tanlang');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    
+  const fetchUncheckedSessions = async () => {
     try {
-      const response = await assistantAPI.getSessionsByTime(formData.date, formData.time);
-      setStudents(response.data);
-      if (response.data.length === 0) {
-        setError('Bu vaqtda talabalar yo\'q');
+      setLoading(true);
+      setError('');
+      
+      // Get all past sessions that haven't been marked yet
+      const response = await assistantAPI.getSessions('past');
+      const sessions = response.data;
+      
+      // Filter sessions that need attendance marking
+      const unchecked = [];
+      
+      for (const session of sessions) {
+        if (session.students) {
+          session.students.forEach(student => {
+            if (!student.attendance || student.attendance === 'kutilmoqda') {
+              const sessionDateTime = new Date(`${session.date}T${session.time}:00`);
+              const now = new Date();
+              
+              // Only show sessions that are in the past or today
+              if (sessionDateTime <= now) {
+                unchecked.push({
+                  session_id: session.id,
+                  date: session.date,
+                  time: session.time,
+                  student_id: student.id || student.student_id,
+                  student_name: student.name || student.student_name,
+                  student_phone: student.phone || student.student_phone,
+                  student_photo: student.photo || student.student_photo,
+                  attendance_status: student.attendance || 'kutilmoqda'
+                });
+              }
+            }
+          });
+        }
+      }
+      
+      // Sort by date/time (oldest first)
+      unchecked.sort((a, b) => {
+        const dateTimeA = new Date(`${a.date}T${a.time}:00`);
+        const dateTimeB = new Date(`${b.date}T${b.time}:00`);
+        return dateTimeA - dateTimeB;
+      });
+      
+      setUncheckedSessions(unchecked);
+      
+      if (unchecked.length === 0) {
+        setError('Belgilanmagan davomatlar yo\'q');
       }
     } catch (err) {
       setError('Ma\'lumotlarni yuklashda xatolik');
@@ -45,11 +65,15 @@ const MarkAttendance = ({ refresh }) => {
     }
   };
 
-  const markAttendance = async (studentId, attendance) => {
+  useEffect(() => {
+    fetchUncheckedSessions();
+  }, [refresh]);
+
+  const markAttendance = async (sessionId, attendance) => {
     try {
-      await assistantAPI.markAttendance(studentId, { attendance });
+      await assistantAPI.markAttendance(sessionId, { attendance });
       setSuccess('Davomat belgilandi');
-      fetchStudents(); // Refresh the list
+      fetchUncheckedSessions(); // Refresh the list
     } catch (err) {
       setError('Davomatni belgilashda xatolik');
     }
@@ -60,42 +84,23 @@ const MarkAttendance = ({ refresh }) => {
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
       
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
-        <Input
-          label="Sana"
-          type="date"
-          name="date"
-          value={formData.date}
-          onChange={handleChange}
-          max={new Date().toISOString().split('T')[0]}
-        />
-        
-        <Input
-          label="Vaqt"
-          type="time"
-          name="time"
-          value={formData.time}
-          onChange={handleChange}
-        />
-        
-        <Button
-          onClick={fetchStudents}
-          disabled={loading || !formData.date || !formData.time}
-          style={{ height: '44px' }}
-        >
-          {loading ? 'Qidirilmoqda...' : 'Qidirish'}
-        </Button>
-      </div>
+      <Button
+        onClick={fetchUncheckedSessions}
+        disabled={loading}
+        style={{ marginBottom: '20px' }}
+      >
+        {loading ? 'Yuklanmoqda...' : 'Yangilash'}
+      </Button>
 
-      {students.length > 0 && (
-        <div style={{ marginTop: '20px' }}>
+      {uncheckedSessions.length > 0 && (
+        <div>
           <h4 style={{ marginBottom: '16px' }}>
-            {formData.date} - {formData.time} dagi talabalar
+            Belgilanmagan davomatlar ({uncheckedSessions.length})
           </h4>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {students.map((student) => (
-              <div key={student.student_id} style={{
+            {uncheckedSessions.map((session, index) => (
+              <div key={`${session.session_id}-${session.student_id}-${index}`} style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -104,9 +109,9 @@ const MarkAttendance = ({ refresh }) => {
                 borderRadius: '8px'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  {student.student_photo && (
+                  {session.student_photo && (
                     <img 
-                      src={student.student_photo} 
+                      src={session.student_photo} 
                       alt="Student" 
                       style={{ 
                         width: '40px', 
@@ -117,27 +122,26 @@ const MarkAttendance = ({ refresh }) => {
                     />
                   )}
                   <div>
-                    <div style={{ fontWeight: '500' }}>{student.student_name}</div>
-                    <div style={{ fontSize: '14px', color: '#666' }}>{student.student_phone}</div>
+                    <div style={{ fontWeight: '500' }}>{session.student_name}</div>
+                    <div style={{ fontSize: '14px', color: '#666' }}>
+                      {session.date} {session.time} • {session.student_phone}
+                    </div>
                   </div>
                 </div>
                 
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <span style={{ 
                     fontSize: '12px',
-                    color: student.attendance_status === 'present' ? 'green' : 
-                          student.attendance_status === 'absent' ? 'red' : '#666',
+                    color: '#666',
                     marginRight: '12px'
                   }}>
-                    {student.attendance_status === 'present' ? 'Keldi' :
-                     student.attendance_status === 'absent' ? 'Kelmadi' : 'Kutilmoqda'}
+                    {session.attendance_status === 'kutilmoqda' ? 'Kutilmoqda' : session.attendance_status}
                   </span>
                   
                   <Button
                     size="small"
                     variant="success"
-                    onClick={() => markAttendance(student.student_id, 'present')}
-                    disabled={student.attendance_status === 'present'}
+                    onClick={() => markAttendance(session.session_id, 'present')}
                   >
                     Keldi
                   </Button>
@@ -145,8 +149,7 @@ const MarkAttendance = ({ refresh }) => {
                   <Button
                     size="small"
                     variant="danger"
-                    onClick={() => markAttendance(student.student_id, 'absent')}
-                    disabled={student.attendance_status === 'absent'}
+                    onClick={() => markAttendance(session.session_id, 'absent')}
                   >
                     Kelmadi
                   </Button>
